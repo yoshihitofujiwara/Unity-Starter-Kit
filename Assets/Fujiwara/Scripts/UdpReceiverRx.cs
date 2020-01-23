@@ -33,65 +33,79 @@ public class UdpState: System.IEquatable<UdpState>
 
 public class UdpReceiverRx: MonoBehaviour
 {
-    [SerializeField] int listenPort = 8888;
+    [SerializeField] public int port = 8888;
+    public IObservable<UdpState> udpSequence;
+    public bool isReceive;
     private static UdpClient client;
-    private bool isReceive;
-    public IObservable<UdpState> _udpSequence;
 
-    void OnApplicationQuit()
+
+    /*--------------------------------------------------------------------------
+        @LifeCycleMethods
+    --------------------------------------------------------------------------*/
+    void OnEnable()
     {
-        isReceive = true;
-        client.Client.Blocking = false;
-
-        client.Close();
-        client.Dispose();
-        client = null;
-
+        Connect();
     }
 
 
-
-    void Connect()
+    void OnDisable()
     {
-        _udpSequence = Observable.Create<UdpState>(observer =>
+        Disconnect();
+    }
+
+
+    /*--------------------------------------------------------------------------
+        @Methods
+    --------------------------------------------------------------------------*/
+    public void Connect()
+    {
+        udpSequence = Observable.Create<UdpState>(observer =>
         {
-            Debug.Log(string.Format("_udpSequence thread: {0}", System.Threading.Thread.CurrentThread.ManagedThreadId));
+            Debug.Log(string.Format("udpSequence thread: {0}", System.Threading.Thread.CurrentThread.ManagedThreadId));
+
             try
             {
-                client = new UdpClient(listenPort);
+                client = new UdpClient(port);
             }
             catch (SocketException ex)
             {
                 observer.OnError(ex);
             }
+
             IPEndPoint remoteEP = null;
             client.EnableBroadcast = true;
             client.Client.ReceiveTimeout = 5000;
+
             while (!isReceive)
             {
                 try
                 {
                     remoteEP = null;
-                    var receivedMsg = System.Text.Encoding.ASCII.GetString(client.Receive(ref remoteEP));
+                    string receivedMsg = System.Text.Encoding.ASCII.GetString(client.Receive(ref remoteEP));
                     observer.OnNext(new UdpState(remoteEP, receivedMsg));
                 }
                 catch (SocketException)
                 {
-                    Debug.Log("UDP::Receive timeout");
+                    Debug.Log("UDPReceive Timeout");
                 }
             }
+
             observer.OnCompleted();
             return null;
         })
         .SubscribeOn(Scheduler.ThreadPool)
-        .Publish()
-        .RefCount();
+        .Share();
+        // .Publish()
+        // .RefCount();
     }
 
 
-    void Disconnect()
+    public void Disconnect()
     {
-
+        isReceive = true;
+        client.Client.Blocking = false;
+        client.Close();
+        client.Dispose();
+        client = null;
     }
-
 }
